@@ -1,0 +1,811 @@
+--// Serviços
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+--// Remote
+local REUseItem = ReplicatedStorage.Packages.Net["RE/UseItem"]
+
+--// Player Local
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Root = Character:WaitForChild("HumanoidRootPart")
+
+--// Configurações gerais
+local DistanceLimit = 30
+local ScriptEnabled = false
+local TargetPlayer = nil
+local ChaoAtivo = false
+local chaoPart
+
+--// Novo Sistema ESP
+local Camera = workspace.CurrentCamera
+local ESP = {}
+local ESPEnabled = false
+
+--// Variáveis do Menu
+local MenuVisible = true
+local dragging = false
+local dragInput = nil
+local dragStart = nil
+local startPos = nil
+
+--// Criando o Menu Principal
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CustomMenu"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+--// Frame Principal
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 450, 0, 380)
+MainFrame.Position = UDim2.new(0.5, -225, 0.5, -190)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = false
+MainFrame.Parent = ScreenGui
+
+--// Sombra do Frame
+local Shadow = Instance.new("Frame")
+Shadow.Name = "Shadow"
+Shadow.Size = UDim2.new(1, 6, 1, 6)
+Shadow.Position = UDim2.new(0, -3, 0, -3)
+Shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.BackgroundTransparency = 0.7
+Shadow.BorderSizePixel = 0
+Shadow.ZIndex = MainFrame.ZIndex - 1
+Shadow.Parent = MainFrame
+
+--// Cantos arredondados
+local function CreateCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 8)
+    corner.Parent = parent
+end
+
+CreateCorner(MainFrame, 12)
+CreateCorner(Shadow, 12)
+
+--// Header/Barra de Título
+local HeaderFrame = Instance.new("Frame")
+HeaderFrame.Name = "Header"
+HeaderFrame.Size = UDim2.new(1, 0, 0, 35)
+HeaderFrame.Position = UDim2.new(0, 0, 0, 0)
+HeaderFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+HeaderFrame.BorderSizePixel = 0
+HeaderFrame.Active = true
+HeaderFrame.Parent = MainFrame
+CreateCorner(HeaderFrame, 12)
+
+--// Título
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, -70, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Menu do David"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = HeaderFrame
+
+--// Botão Minimizar
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Name = "MinimizeBtn"
+MinimizeBtn.Size = UDim2.new(0, 25, 0, 25)
+MinimizeBtn.Position = UDim2.new(1, -55, 0, 5)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 193, 7)
+MinimizeBtn.Text = "−"
+MinimizeBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+MinimizeBtn.TextSize = 18
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.BorderSizePixel = 0
+MinimizeBtn.Parent = HeaderFrame
+CreateCorner(MinimizeBtn, 4)
+
+--// Botão Fechar
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.new(0, 25, 0, 25)
+CloseBtn.Position = UDim2.new(1, -25, 0, 5)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 14
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.BorderSizePixel = 0
+CloseBtn.Parent = HeaderFrame
+CreateCorner(CloseBtn, 4)
+
+--// Área de Conteúdo
+local ContentFrame = Instance.new("ScrollingFrame")
+ContentFrame.Name = "Content"
+ContentFrame.Size = UDim2.new(1, -20, 1, -50)
+ContentFrame.Position = UDim2.new(0, 10, 0, 40)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.ScrollBarThickness = 6
+ContentFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
+ContentFrame.BorderSizePixel = 0
+ContentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ContentFrame.Parent = MainFrame
+
+--// Layout do Conteúdo
+local ContentLayout = Instance.new("UIListLayout")
+ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ContentLayout.Padding = UDim.new(0, 10)
+ContentLayout.Parent = ContentFrame
+
+--// Sistema de arrastar apenas o Header
+local function updateInput(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + delta.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + delta.Y
+    )
+end
+
+HeaderFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+HeaderFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        updateInput(input)
+    end
+end)
+
+--// Função para criar Separador
+local function CreateSeparator(parent, text)
+    local separator = Instance.new("Frame")
+    separator.Name = "Separator"
+    separator.Size = UDim2.new(1, 0, 0, 30)
+    separator.BackgroundTransparency = 1
+    separator.Parent = parent
+    
+    local line = Instance.new("Frame")
+    line.Size = UDim2.new(1, -60, 0, 2)
+    line.Position = UDim2.new(0, 30, 0.5, -1)
+    line.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
+    line.BorderSizePixel = 0
+    line.Parent = separator
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 100, 1, 0)
+    label.Position = UDim2.new(0.5, -50, 0, 0)
+    label.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(200, 200, 220)
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.Parent = separator
+    
+    return separator
+end
+
+--// Função para criar Toggle
+local function CreateToggle(parent, text, callback)
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Name = "ToggleFrame"
+    toggleFrame.Size = UDim2.new(1, 0, 0, 40)
+    toggleFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    toggleFrame.BorderSizePixel = 0
+    toggleFrame.Parent = parent
+    CreateCorner(toggleFrame, 8)
+    
+    local toggleLabel = Instance.new("TextLabel")
+    toggleLabel.Size = UDim2.new(1, -60, 1, 0)
+    toggleLabel.Position = UDim2.new(0, 10, 0, 0)
+    toggleLabel.BackgroundTransparency = 1
+    toggleLabel.Text = text
+    toggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    toggleLabel.TextSize = 14
+    toggleLabel.Font = Enum.Font.Gotham
+    toggleLabel.Parent = toggleFrame
+    
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Name = "ToggleButton"
+    toggleButton.Size = UDim2.new(0, 45, 0, 25)
+    toggleButton.Position = UDim2.new(1, -55, 0.5, -12.5)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+    toggleButton.Text = "OFF"
+    toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.TextSize = 12
+    toggleButton.Font = Enum.Font.GothamBold
+    toggleButton.BorderSizePixel = 0
+    toggleButton.Parent = toggleFrame
+    CreateCorner(toggleButton, 12)
+    
+    local isEnabled = false
+    
+    toggleButton.MouseButton1Click:Connect(function()
+        isEnabled = not isEnabled
+        local targetColor = isEnabled and Color3.fromRGB(40, 167, 69) or Color3.fromRGB(220, 53, 69)
+        local targetText = isEnabled and "ON" or "OFF"
+        
+        local tween = TweenService:Create(toggleButton, TweenInfo.new(0.2), {BackgroundColor3 = targetColor})
+        tween:Play()
+        
+        toggleButton.Text = targetText
+        callback(isEnabled)
+    end)
+    
+    return toggleFrame, toggleButton
+end
+
+--// Função para criar Dropdown
+local function CreateDropdown(parent, text, callback)
+    local dropdownFrame = Instance.new("Frame")
+    dropdownFrame.Name = "DropdownFrame"
+    dropdownFrame.Size = UDim2.new(1, 0, 0, 40)
+    dropdownFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    dropdownFrame.BorderSizePixel = 0
+    dropdownFrame.Parent = parent
+    CreateCorner(dropdownFrame, 8)
+    
+    local dropdownLabel = Instance.new("TextLabel")
+    dropdownLabel.Size = UDim2.new(0.5, -10, 1, 0)
+    dropdownLabel.Position = UDim2.new(0, 10, 0, 0)
+    dropdownLabel.BackgroundTransparency = 1
+    dropdownLabel.Text = text
+    dropdownLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    dropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+    dropdownLabel.TextSize = 14
+    dropdownLabel.Font = Enum.Font.Gotham
+    dropdownLabel.Parent = dropdownFrame
+    
+    local dropdownButton = Instance.new("TextButton")
+    dropdownButton.Name = "DropdownButton"
+    dropdownButton.Size = UDim2.new(0.5, -10, 0, 30)
+    dropdownButton.Position = UDim2.new(0.5, 0, 0, 5)
+    dropdownButton.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+    dropdownButton.Text = "Nenhum Player"
+    dropdownButton.TextColor3 = Color3.fromRGB(200, 200, 220)
+    dropdownButton.TextSize = 12
+    dropdownButton.Font = Enum.Font.Gotham
+    dropdownButton.BorderSizePixel = 0
+    dropdownButton.Parent = dropdownFrame
+    CreateCorner(dropdownButton, 6)
+    
+    local dropdownList = Instance.new("ScrollingFrame")
+    dropdownList.Name = "DropdownList"
+    dropdownList.Size = UDim2.new(1, 0, 0, 0)
+    dropdownList.Position = UDim2.new(0, 0, 1, 5)
+    dropdownList.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    dropdownList.BorderSizePixel = 0
+    dropdownList.Visible = false
+    dropdownList.ScrollBarThickness = 4
+    dropdownList.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
+    dropdownList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    dropdownList.Parent = dropdownFrame
+    CreateCorner(dropdownList, 6)
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 2)
+    listLayout.Parent = dropdownList
+    
+    local isOpen = false
+    
+    local function updateDropdown()
+        for _, child in pairs(dropdownList:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+        
+        local players = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                table.insert(players, p.Name)
+            end
+        end
+        
+        local allOption = Instance.new("TextButton")
+        allOption.Name = "AllPlayers"
+        allOption.Size = UDim2.new(1, 0, 0, 25)
+        allOption.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+        allOption.Text = "Todos os Players"
+        allOption.TextColor3 = Color3.fromRGB(255, 255, 255)
+        allOption.TextSize = 12
+        allOption.Font = Enum.Font.Gotham
+        allOption.BorderSizePixel = 0
+        allOption.Parent = dropdownList
+        
+        allOption.MouseButton1Click:Connect(function()
+            dropdownButton.Text = "Todos os Players"
+            dropdownList.Visible = false
+            isOpen = false
+            callback(nil)
+        end)
+        
+        for i, playerName in ipairs(players) do
+            local optionButton = Instance.new("TextButton")
+            optionButton.Name = "Option"..i
+            optionButton.Size = UDim2.new(1, 0, 0, 25)
+            optionButton.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+            optionButton.Text = playerName
+            optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            optionButton.TextSize = 12
+            optionButton.Font = Enum.Font.Gotham
+            optionButton.BorderSizePixel = 0
+            optionButton.Parent = dropdownList
+            
+            optionButton.MouseButton1Click:Connect(function()
+                dropdownButton.Text = playerName
+                dropdownList.Visible = false
+                isOpen = false
+                callback(playerName)
+            end)
+        end
+        
+        local totalItems = #players + 1
+        local maxHeight = math.min(totalItems * 27, 150)
+        dropdownList.Size = UDim2.new(1, 0, 0, maxHeight)
+        dropdownList.CanvasSize = UDim2.new(0, 0, 0, totalItems * 27)
+    end
+    
+    dropdownButton.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        dropdownList.Visible = isOpen
+        if isOpen then
+            updateDropdown()
+        end
+    end)
+    
+    return dropdownFrame, updateDropdown
+end
+
+--// Novo Sistema ESP usando Drawing
+function CreateESP(player)
+    if player == LocalPlayer then return end
+    if ESP[player] then return end
+
+    local line = Drawing.new("Line")
+    line.Color = Color3.fromRGB(255, 0, 0)
+    line.Thickness = 1.5
+    line.Visible = false
+
+    local nameTag = Drawing.new("Text")
+    nameTag.Size = 16
+    nameTag.Center = true
+    nameTag.Outline = true
+    nameTag.Color = Color3.fromRGB(255, 255, 255)
+    nameTag.Visible = false
+
+    ESP[player] = {line = line, name = nameTag}
+
+    local connection = RunService.RenderStepped:Connect(function()
+        if not ESPEnabled then
+            line.Visible = false
+            nameTag.Visible = false
+            return
+        end
+
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local root = player.Character.HumanoidRootPart
+            local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+
+            if onScreen then
+                -- Linha do meio da tela até o player
+                line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                line.To = Vector2.new(pos.X, pos.Y)
+                line.Visible = true
+
+                -- Nome acima do player
+                nameTag.Position = Vector2.new(pos.X, pos.Y - 25)
+                nameTag.Text = player.Name
+                nameTag.Visible = true
+            else
+                line.Visible = false
+                nameTag.Visible = false
+            end
+        else
+            line.Visible = false
+            nameTag.Visible = false
+        end
+    end)
+
+    ESP[player].connection = connection
+end
+
+local function ToggleESP(enabled)
+    ESPEnabled = enabled
+    
+    if enabled then
+        print("ESP Ativado!")
+        -- Criar ESP para todos os players existentes
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                CreateESP(player)
+            end
+        end
+    else
+        print("ESP Desativado!")
+        -- Ocultar todos os ESPs existentes
+        for player, espData in pairs(ESP) do
+            if espData.line then espData.line.Visible = false end
+            if espData.name then espData.name.Visible = false end
+        end
+    end
+end
+
+--// Criando elementos do menu
+CreateSeparator(ContentFrame, "SISTEMA ESP")
+
+-- Toggle ESP
+local espToggle = CreateToggle(ContentFrame, "Ativar ESP (Nome + Linha)", function(value)
+    ToggleESP(value)
+end)
+
+CreateSeparator(ContentFrame, "CONTROLE DE TIROS")
+
+-- Toggle Script de Tiros
+local tirosToggle = CreateToggle(ContentFrame, "Ativar Script de Tiros", function(value)
+    ScriptEnabled = value
+    if value then
+        print("Script de tiros ativado!")
+    else
+        print("Script de tiros desativado!")
+    end
+end)
+
+--// Novo Menu de Players
+local PlayerMenuGui = Instance.new("ScreenGui")
+PlayerMenuGui.Name = "PlayerMenu"
+PlayerMenuGui.ResetOnSpawn = false
+PlayerMenuGui.Parent = PlayerGui
+
+--// Frame Principal
+local PlayerFrame = Instance.new("Frame")
+PlayerFrame.Name = "PlayerFrame"
+PlayerFrame.Size = UDim2.new(0, 300, 0, 400)
+PlayerFrame.Position = UDim2.new(0.7, 0, 0.3, 0)
+PlayerFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+PlayerFrame.BorderSizePixel = 0
+PlayerFrame.Active = true
+PlayerFrame.Parent = PlayerMenuGui
+CreateCorner(PlayerFrame, 12)
+
+--// Sombra
+local PlayerShadow = Instance.new("Frame")
+PlayerShadow.Name = "Shadow"
+PlayerShadow.Size = UDim2.new(1, 6, 1, 6)
+PlayerShadow.Position = UDim2.new(0, -3, 0, -3)
+PlayerShadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+PlayerShadow.BackgroundTransparency = 0.7
+PlayerShadow.BorderSizePixel = 0
+PlayerShadow.ZIndex = PlayerFrame.ZIndex - 1
+PlayerShadow.Parent = PlayerFrame
+CreateCorner(PlayerShadow, 12)
+
+--// Header
+local PlayerHeader = Instance.new("Frame")
+PlayerHeader.Name = "Header"
+PlayerHeader.Size = UDim2.new(1, 0, 0, 35)
+PlayerHeader.Position = UDim2.new(0, 0, 0, 0)
+PlayerHeader.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+PlayerHeader.BorderSizePixel = 0
+PlayerHeader.Active = true
+PlayerHeader.Parent = PlayerFrame
+CreateCorner(PlayerHeader, 12)
+
+local PlayerTitle = Instance.new("TextLabel")
+PlayerTitle.Name = "Title"
+PlayerTitle.Size = UDim2.new(1, -70, 1, 0)
+PlayerTitle.Position = UDim2.new(0, 10, 0, 0)
+PlayerTitle.BackgroundTransparency = 1
+PlayerTitle.Text = "Lista de Players"
+PlayerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayerTitle.TextSize = 16
+PlayerTitle.Font = Enum.Font.GothamBold
+PlayerTitle.TextXAlignment = Enum.TextXAlignment.Left
+PlayerTitle.Parent = PlayerHeader
+
+--// Botões Fechar e Minimizar
+local PlayerMinimizeBtn = Instance.new("TextButton")
+PlayerMinimizeBtn.Size = UDim2.new(0, 25, 0, 25)
+PlayerMinimizeBtn.Position = UDim2.new(1, -55, 0, 5)
+PlayerMinimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 193, 7)
+PlayerMinimizeBtn.Text = "−"
+PlayerMinimizeBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+PlayerMinimizeBtn.TextSize = 18
+PlayerMinimizeBtn.Font = Enum.Font.GothamBold
+PlayerMinimizeBtn.BorderSizePixel = 0
+PlayerMinimizeBtn.Parent = PlayerHeader
+CreateCorner(PlayerMinimizeBtn, 4)
+
+local PlayerCloseBtn = Instance.new("TextButton")
+PlayerCloseBtn.Size = UDim2.new(0, 25, 0, 25)
+PlayerCloseBtn.Position = UDim2.new(1, -25, 0, 5)
+PlayerCloseBtn.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+PlayerCloseBtn.Text = "✕"
+PlayerCloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayerCloseBtn.TextSize = 14
+PlayerCloseBtn.Font = Enum.Font.GothamBold
+PlayerCloseBtn.BorderSizePixel = 0
+PlayerCloseBtn.Parent = PlayerHeader
+CreateCorner(PlayerCloseBtn, 4)
+
+--// Conteúdo com lista de players
+local PlayerContent = Instance.new("ScrollingFrame")
+PlayerContent.Size = UDim2.new(1, -20, 1, -50)
+PlayerContent.Position = UDim2.new(0, 10, 0, 40)
+PlayerContent.BackgroundTransparency = 1
+PlayerContent.ScrollBarThickness = 6
+PlayerContent.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
+PlayerContent.BorderSizePixel = 0
+PlayerContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+PlayerContent.Parent = PlayerFrame
+
+local PlayerListLayout = Instance.new("UIListLayout")
+PlayerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+PlayerListLayout.Padding = UDim.new(0, 5)
+PlayerListLayout.Parent = PlayerContent
+
+--// Função para atualizar lista de players
+local function UpdatePlayerList()
+    for _, child in pairs(PlayerContent:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 30)
+            btn.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+            btn.Text = plr.Name
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.TextSize = 14
+            btn.Font = Enum.Font.Gotham
+            btn.BorderSizePixel = 0
+            btn.Parent = PlayerContent
+            CreateCorner(btn, 6)
+
+            btn.MouseButton1Click:Connect(function()
+                TargetPlayer = plr.Name
+                print("Alvo selecionado via menu de players: " .. plr.Name)
+            end)
+        end
+    end
+
+    local count = #Players:GetPlayers() - 1
+    PlayerContent.CanvasSize = UDim2.new(0, 0, 0, count * 35)
+end
+
+--// Atualizar ao entrar e sair de players
+Players.PlayerAdded:Connect(UpdatePlayerList)
+Players.PlayerRemoving:Connect(UpdatePlayerList)
+
+-- Inicializa lista
+UpdatePlayerList()
+
+--// Função de arrastar menu
+local draggingPlayerMenu = false
+local dragInputPlayer, dragStartPlayer, startPosPlayer
+
+local function updateInputPlayer(input)
+    local delta = input.Position - dragStartPlayer
+    PlayerFrame.Position = UDim2.new(
+        startPosPlayer.X.Scale,
+        startPosPlayer.X.Offset + delta.X,
+        startPosPlayer.Y.Scale,
+        startPosPlayer.Y.Offset + delta.Y
+    )
+end
+
+PlayerHeader.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingPlayerMenu = true
+        dragStartPlayer = input.Position
+        startPosPlayer = PlayerFrame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingPlayerMenu = false
+            end
+        end)
+    end
+end)
+
+PlayerHeader.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInputPlayer = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInputPlayer and draggingPlayerMenu then
+        updateInputPlayer(input)
+    end
+end)
+
+--// Botões de fechar e minimizar
+PlayerCloseBtn.MouseButton1Click:Connect(function()
+    PlayerMenuGui:Destroy()
+end)
+
+local PlayerMenuVisible = true
+PlayerMinimizeBtn.MouseButton1Click:Connect(function()
+    PlayerMenuVisible = not PlayerMenuVisible
+    local targetSize = PlayerMenuVisible and UDim2.new(0, 300, 0, 400) or UDim2.new(0, 300, 0, 35)
+    PlayerFrame.Size = targetSize
+    PlayerContent.Visible = PlayerMenuVisible
+    PlayerMinimizeBtn.Text = PlayerMenuVisible and "−" or "+"
+end)
+
+CreateSeparator(ContentFrame, "CHÃO PARA FUGIR")
+
+-- Toggle Chao
+local chaoToggle = CreateToggle(ContentFrame, "Ativar Chão", function(value)
+    ChaoAtivo = value
+    if ChaoAtivo then
+        if not chaoPart then
+            chaoPart = Instance.new("Part")
+            chaoPart.Size = Vector3.new(6,1,6)
+            chaoPart.Anchored = true
+            chaoPart.BrickColor = BrickColor.new("Bright red")
+            chaoPart.Name = "ChaoParaFugir"
+            chaoPart.Parent = workspace
+        end
+        -- Loop para atualizar posição
+        task.spawn(function()
+            while ChaoAtivo and chaoPart do
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    chaoPart.Position = hrp.Position - Vector3.new(0,3,0)
+                end
+                task.wait(0.03)
+            end
+        end)
+    else
+        if chaoPart then
+            chaoPart:Destroy()
+            chaoPart = nil
+        end
+    end
+end)
+
+--// Funcionalidades dos botões
+CloseBtn.MouseButton1Click:Connect(function()
+    -- Limpar ESP antes de fechar
+    for player, espData in pairs(ESP) do
+        if espData.line then espData.line:Remove() end
+        if espData.name then espData.name:Remove() end
+        if espData.connection then espData.connection:Disconnect() end
+    end
+    ESP = {}
+    
+    ScreenGui:Destroy()
+    if chaoPart then
+        chaoPart:Destroy()
+    end
+end)
+
+MinimizeBtn.MouseButton1Click:Connect(function()
+    MenuVisible = not MenuVisible
+    local targetSize = MenuVisible and UDim2.new(0, 450, 0, 380) or UDim2.new(0, 450, 0, 35)
+    local tween = TweenService:Create(MainFrame, TweenInfo.new(0.3), {Size = targetSize})
+    tween:Play()
+    
+    ContentFrame.Visible = MenuVisible
+    MinimizeBtn.Text = MenuVisible and "−" or "+"
+end)
+
+--// Eventos de players
+-- Cria ESP para players já existentes
+for _, plr in pairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        CreateESP(plr)
+    end
+end
+
+-- Cria ESP para novos players
+Players.PlayerAdded:Connect(function(plr)
+    CreateESP(plr)
+end)
+
+-- Remove ESP quando player sair
+Players.PlayerRemoving:Connect(function(plr)
+    if ESP[plr] then
+        if ESP[plr].line then ESP[plr].line:Remove() end
+        if ESP[plr].name then ESP[plr].name:Remove() end
+        if ESP[plr].connection then ESP[plr].connection:Disconnect() end
+        ESP[plr] = nil
+    end
+    
+    -- Se era o alvo, remover
+    if TargetPlayer == plr.Name then
+        TargetPlayer = nil
+    end
+end)
+
+--// Ajustar tamanho do conteúdo automaticamente
+ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ContentFrame.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
+end)
+
+--// Função de tiro
+local function ShootPlayer(player)
+    if player and player.Character then
+        local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        local targetArm = player.Character:FindFirstChild("LeftLowerArm")
+        local targetTorso = player.Character:FindFirstChild("Torso") or player.Character:FindFirstChild("UpperTorso")
+
+        if targetRoot then
+            if targetArm then
+                REUseItem:FireServer(targetRoot.Position, targetArm)
+                print("Atirando no braço de: " .. player.Name)
+            end
+
+            if targetTorso then
+                task.delay(3.5, function()
+                    REUseItem:FireServer(targetRoot.Position, targetTorso)
+                    print("Atirando no torso de: " .. player.Name)
+                end)
+            end
+        end
+    end
+end
+
+--// Configuração do Delay dos tiros
+local ShootDelay = 0 -- segundos entre cada tiro (ajuste aqui)
+local LastShot = 0
+
+--// Loop Script de Tiros
+task.spawn(function()
+    while true do
+        RunService.Heartbeat:Wait()
+        if ScriptEnabled and tick() - LastShot >= ShootDelay then
+            LastShot = tick()
+
+            if TargetPlayer then
+                local player = Players:FindFirstChild(TargetPlayer)
+                if player then
+                    ShootPlayer(player)
+                end
+            else
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer and player.Character then
+                        local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                        if targetRoot then
+                            local distance = (Root.Position - targetRoot.Position).Magnitude
+                            if distance <= DistanceLimit then
+                                ShootPlayer(player)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+print("Menu carregado com sucesso!")
